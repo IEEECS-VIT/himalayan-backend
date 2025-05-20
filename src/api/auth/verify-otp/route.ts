@@ -37,9 +37,13 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       });
     }
 
-    // Get Medusa token using their auth endpoint
+    // Get Medusa token using their auth endpoint (not sure if i can get the token like this)
     const authResponse = await axios.post('/auth/customer/otp', {
       phone: phone
+    }, {
+      headers: {
+        'x-publishable-api-key': process.env.MEDUSA_PUBLISHABLE_API_KEY
+      }
     });
 
     // Return success with customer info and Medusa token
