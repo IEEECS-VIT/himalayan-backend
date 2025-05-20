@@ -2,7 +2,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
 import twilioService from "../../../services/twilio.service";
 import { container } from "@medusajs/framework";
 import { Modules } from "@medusajs/framework/utils";
-import jwt from "jsonwebtoken";
+import axios from "axios";
 
 type VerifyOTPInput = {
   phone: string;
@@ -37,20 +37,16 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       });
     }
 
-    // Generate JWT token for authenticated user
-    const token = jwt.sign(
-      {
-        phone,
-        customer_id: customer.id,
-      },
-      process.env.JWT_SECRET || "super-secret-jwt-key",
-      { expiresIn: "7d" }
-    );
+    // Get Medusa token using their auth endpoint
+    const authResponse = await axios.post('/auth/customer/otp', {
+      phone: phone
+    });
 
+    // Return success with customer info and Medusa token
     res.send({
       message: "OTP verified successfully",
-      token,
       customer,
+      token: authResponse.data.token
     });
   } catch (error) {
     console.error("Error verifying OTP:", error);
