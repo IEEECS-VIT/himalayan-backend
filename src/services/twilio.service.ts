@@ -1,58 +1,104 @@
 import twilio from "twilio";
 import dotenv from "dotenv";
+import { TwilioError } from "./errors";
 
 dotenv.config();
 
 class TwilioService {
   private client: twilio.Twilio;
-  private phoneNumber: string;
+  private verifyServiceSid: string;
   
   constructor() {
     const accountSid = process.env.TWILIO_ACCOUNT_SID;
     const authToken = process.env.TWILIO_AUTH_TOKEN;
+    this.verifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID || "";
     
     if (!accountSid || !authToken) {
       throw new Error("Twilio credentials are not configured");
     }
     
-    this.client = twilio(accountSid, authToken);
-    this.phoneNumber = process.env.TWILIO_PHONE_NUMBER || "";
-    
-    if (!this.phoneNumber) {
-      throw new Error("Twilio phone number is not configured");
+    if (!this.verifyServiceSid) {
+      throw new Error("Twilio Verify Service SID is not configured");
     }
+    
+    this.client = twilio(accountSid, authToken);
   }
   
-  async sendSMS(to: string, body: string): Promise<void> {
+  private async validateAndFormatPhoneNumber(phone: string): Promise<string> {
     try {
-      // Make sure phone number is in E.164 format (e.g., +1234567890)
-      const formattedPhone = this.formatPhoneNumber(to);
+      // Ensure phone number is in E.164 format
+      const formattedPhone = this.formatPhoneNumber(phone);
       
-      await this.client.messages.create({
-        body,
-        from: this.phoneNumber,
-        to: formattedPhone
-      });
+      // Validate phone number using Twilio's Lookup API
+      const lookup = await this.client.lookups.v2.phoneNumbers(formattedPhone).fetch();
       
-      console.log(`SMS sent to ${formattedPhone}`);
+      if (!lookup.valid) {
+        throw new TwilioError("Invalid phone number", "INVALID_PHONE");
+      }
+      
+      return lookup.phoneNumber;
     } catch (error) {
-      console.error("Error sending SMS:", error);
-      throw error;
+      if (error instanceof TwilioError) {
+        throw error;
+      }
+      throw new TwilioError("Failed to validate phone number", "PHONE_VALIDATION_ERROR");
     }
   }
   
   private formatPhoneNumber(phone: string): string {
-    // Basic formatting to ensure E.164 format
-   
-    if (!phone.startsWith('+')) {
-      return `+${phone}`;
+    // Remove any non-digit characters except +
+    const cleaned = phone.replace(/[^\d+]/g, '');
+    
+    // Ensure it starts with +
+    if (!cleaned.startsWith('+')) {
+      return `+${cleaned}`;
     }
-    return phone;
+    return cleaned;
   }
   
   async sendOTP(phone: string, otp: string, expiryMinutes: number): Promise<void> {
-    const message = `Your verification code is ${otp}. It expires in ${expiryMinutes} minutes.`;
-    await this.sendSMS(phone, message);
+    try {
+      // Validate and format phone number
+      const formattedPhone = await this.validateAndFormatPhoneNumber(phone);
+      
+      // Send verification code using Twilio Verify
+      const verification = await this.client.verify.v2
+        .services(this.verifyServiceSid)
+        .verifications.create({
+          to: formattedPhone,
+          channel: "sms"
+        });
+      
+      if (verification.status !== "pending") {
+        throw new TwilioError(`Failed to send verification: ${verification.status}`, "VERIFY_SEND_ERROR");
+      }
+      
+      console.log(`Verification sent to ${formattedPhone} with SID: ${verification.sid}`);
+    } catch (error) {
+      if (error instanceof TwilioError) {
+        throw error;
+      }
+      console.error("Error sending verification:", error);
+      throw new TwilioError("Failed to send verification", "VERIFY_SEND_ERROR");
+    }
+  }
+
+  async verifyOTP(phone: string, code: string): Promise<boolean> {
+    try {
+      const formattedPhone = await this.validateAndFormatPhoneNumber(phone);
+      
+      const verificationCheck = await this.client.verify.v2
+        .services(this.verifyServiceSid)
+        .verificationChecks.create({
+          to: formattedPhone,
+          code: code
+        });
+      
+      return verificationCheck.status === "approved";
+    } catch (error) {
+      console.error("Error checking verification:", error);
+      throw new TwilioError("Failed to check verification", "VERIFY_CHECK_ERROR");
+    }
   }
 }
 
