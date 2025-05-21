@@ -49,9 +49,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
           first_name,
           last_name,
           email,
-          metadata: {
-            phone,
-          },
+          phone
         },
       },
     });
