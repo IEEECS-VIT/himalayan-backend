@@ -29,6 +29,10 @@ module.exports = defineConfig({
       },
     },
     {
+      resolve: "@medusajs/stock-location",
+      options: {}
+    },
+    {
       resolve: "@medusajs/medusa/workflow-engine-redis",
       options: {
         redis: {
