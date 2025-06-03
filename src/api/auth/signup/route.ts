@@ -30,33 +30,38 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       });
     }
 
-    // Create auth identity for phone
-    const authModuleService = container.resolve(Modules.AUTH);
-    const authIdentity = await authModuleService.createAuthIdentities({
-      provider_identities: [
-        {
-          provider: "phone",
-          entity_id: phone,
-        },
-      ],
-    });
-
-    // Create customer account using workflow
-    const { result } = await createCustomerAccountWorkflow(req.scope).run({
-      input: {
-        authIdentityId: authIdentity.id,
-        customerData: {
-          first_name,
-          last_name,
-          email,
-          phone
-        },
-      },
-    });
-
-    // Get token using store API
-    const authResponse = await axios.post(
+    // First register with email/password to get initial token
+    const registerResponse = await axios.post(
       `${process.env.MEDUSA_BACKEND_URL || "http://localhost:8000"}/auth/customer/emailpass/register`,
+      {
+        email,
+        password: process.env.DEFAULT_CUSTOMER_PASSWORD
+      }
+    );
+
+    const initialToken = registerResponse.data.token;
+
+    // Register customer with store API using the initial token
+    const customerResponse = await axios.post(
+      `${process.env.MEDUSA_BACKEND_URL || "http://localhost:8000"}/store/customers`,
+      {
+        email,
+        first_name,
+        last_name,
+        phone
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${initialToken}`,
+          'Content-Type': 'application/json',
+          'x-publishable-api-key': process.env.MEDUSA_PUBLISHABLE_KEY
+        }
+      }
+    );
+
+    // Get final token by authenticating
+    const finalAuthResponse = await axios.post(
+      `${process.env.MEDUSA_BACKEND_URL || "http://localhost:8000"}/auth/customer/emailpass`,
       {
         email,
         password: process.env.DEFAULT_CUSTOMER_PASSWORD
@@ -66,11 +71,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     // Remove OTP verification from Redis
     await otpStorageService.removeVerifiedOTP(phone);
 
-    // Return success with customer info and token
+    // Return success with customer info and final token
     res.send({
       message: "Signup successful",
-      ...result,
-      token: authResponse.data.token
+      customer: customerResponse.data,
+      token: finalAuthResponse.data.token
     });
   } catch (error) {
     console.error("Error during signup:", error);
