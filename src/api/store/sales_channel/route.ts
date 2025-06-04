@@ -24,7 +24,10 @@ export async function POST(req, res) {
     return res.status(200).json({
       success: true,
       count: filteredLocations.length,
-      locations: filteredLocations,
+      locations: filteredLocations[0].sales_channels.map((channel) => ({
+        id: channel.id,
+        name: channel.name,
+      })),
     });
   } catch (error) {
     console.error("Error fetching stock locations:", error);
