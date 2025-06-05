@@ -16,11 +16,17 @@ export async function POST(req, res) {
       entity: "stock_location",
       fields: ["id", "name", "address.*", "sales_channels.*"],
     });
-
+    console.log("Stock Locations:", stockLocations);
     const filteredLocations = stockLocations.filter(
-      (location) => location.address?.postal_code === pincode
+      (location) => location.address?.postal_code == pincode
     );
-
+    console.log("Filtered Locations:", filteredLocations);
+    if (filteredLocations.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "No stock locations found for the provided pincode.",
+      });
+    } 
     return res.status(200).json({
       success: true,
       count: filteredLocations.length,
