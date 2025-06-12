@@ -66,5 +66,13 @@ module.exports = defineConfig({
         ],
       },
     },
+    // {
+    //   resolve: "./src/services/algolia.service",
+    //   options: {
+    //     appId: process.env.ALGOLIA_APP_ID,
+    //     apiKey: process.env.ALGOLIA_ADMIN_API_KEY,
+    //     indexName: process.env.ALGOLIA_INDEX_NAME || "products",
+    //   },
+    // },
   ],
 });
