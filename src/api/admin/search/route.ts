@@ -1,8 +1,8 @@
-// Updated search route with better debugging
+// Updated search route with CORS support
 // api/admin/search/route.ts
 import type { Request, Response } from "express"
 import { AlgoliaService } from '../../../services/algolia.service'
-// Define SearchFilters type inline if not exported from algolia types
+
 type SearchFilters = {
   category?: string
   price_min?: number
@@ -12,17 +12,35 @@ type SearchFilters = {
   tags?: string[]
 }
 
+// CORS headers helper function
+function setCorsHeaders(res: Response) {
+  res.setHeader('Access-Control-Allow-Origin', '*') 
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key')
+  res.setHeader('Access-Control-Allow-Credentials', 'true')
+}
+
+// Handle OPTIONS preflight requests
+export async function OPTIONS(req: Request, res: Response) {
+  setCorsHeaders(res)
+  res.status(200).end()
+}
+
 // Make sure to use the same API key as in sync
 const algoliaService = new AlgoliaService(
   process.env.ALGOLIA_APP_ID!,
-  process.env.ALGOLIA_ADMIN_API_KEY!, // Use same key as sync script
+  process.env.ALGOLIA_ADMIN_API_KEY!, 
   process.env.ALGOLIA_INDEX_NAME || "products"
 )
 
 export async function GET(req: Request, res: Response) {
   try {
+    // Set CORS headers first
+    setCorsHeaders(res)
+    
     console.log('=== SEARCH REQUEST START ===')
     console.log('Query params:', req.query)
+    console.log('Request headers:', req.headers)
     console.log('Environment check:')
     console.log('- App ID:', process.env.ALGOLIA_APP_ID ? 'SET' : 'NOT SET')
     console.log('- API Key:', process.env.ALGOLIA_ADMIN_API_KEY ? 'SET' : 'NOT SET')
@@ -102,7 +120,7 @@ export async function GET(req: Request, res: Response) {
       }
     }
 
-    res.json({
+    res.status(200).json({
       success: true,
       data: results,
       debug: {
@@ -113,6 +131,9 @@ export async function GET(req: Request, res: Response) {
       }
     })
   } catch (error) {
+    // Ensure CORS headers are set even for errors
+    setCorsHeaders(res)
+    
     console.error('=== SEARCH API ERROR ===')
     console.error('Error type:', error?.constructor?.name)
     console.error('Error message:', error instanceof Error ? error.message : String(error))
@@ -129,12 +150,15 @@ export async function GET(req: Request, res: Response) {
 // Debug endpoint to check index status
 export async function POST(req: Request, res: Response) {
   try {
+    // Set CORS headers
+    setCorsHeaders(res)
+    
     console.log('=== INDEX DEBUG REQUEST ===')
     
     const stats = await algoliaService.getIndexStats()
     const emptySearch = await algoliaService.search("", {}, 0, 10)
     
-    res.json({
+    res.status(200).json({
       success: true,
       debug: {
         indexStats: stats,
@@ -148,6 +172,9 @@ export async function POST(req: Request, res: Response) {
       }
     })
   } catch (error) {
+    // Ensure CORS headers are set even for errors
+    setCorsHeaders(res)
+    
     res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : String(error)
