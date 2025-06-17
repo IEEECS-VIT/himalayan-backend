@@ -14,7 +14,7 @@ type SearchFilters = {
 
 // CORS headers helper function
 function setCorsHeaders(res: Response) {
-  res.setHeader('Access-Control-Allow-Origin', '*') 
+  res.setHeader('Access-Control-Allow-Origin', '*') // or specify your frontend domain
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key')
   res.setHeader('Access-Control-Allow-Credentials', 'true')
@@ -26,7 +26,7 @@ export async function OPTIONS(req: Request, res: Response) {
   res.status(200).end()
 }
 
-// Make sure to use the same API key as in sync
+
 const algoliaService = new AlgoliaService(
   process.env.ALGOLIA_APP_ID!,
   process.env.ALGOLIA_ADMIN_API_KEY!, 
