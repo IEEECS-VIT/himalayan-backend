@@ -18,12 +18,16 @@ export interface Product {
   variants?: ProductVariant[]
 }
 
-// Custom Medusa ProductVariant type definition
+// Custom Medusa ProductVariant type definition - ENHANCED
 export interface ProductVariant {
   id: string
   title?: string
   sku?: string
   inventory_quantity?: number
+  quantity?: number // Alternative field name
+  stock_quantity?: number // Alternative field name
+  manage_inventory?: boolean
+  allow_backorder?: boolean
   prices?: Array<{
     amount: number
     currency_code: string
@@ -34,6 +38,18 @@ export interface ProductVariant {
     }
     value: string
   }>
+  // New inventory-related fields
+  inventory_items?: Array<{
+    stocked_quantity?: number
+    quantity?: number
+  }>
+  inventory?: {
+    stocked_quantity?: number
+    quantity?: number
+    available_quantity?: number
+  }
+  // Allow any additional fields for flexibility
+  [key: string]: any
 }
 
 export type AlgoliaProductRecord = {

@@ -147,11 +147,61 @@ export class AlgoliaService {
     return true
   }
 
+  // FIXED: Better inventory quantity extraction
+  private extractInventoryQuantity(variant: ProductVariant): number {
+    console.log(`🔍 Extracting inventory for variant ${variant.id}:`)
+    console.log("Raw variant data:", JSON.stringify(variant, null, 2))
+
+    // Try different possible inventory fields in Medusa
+    const possibleFields = [
+      "inventory_quantity",
+      "quantity",
+      "stock_quantity",
+      "available_quantity",
+      "manage_inventory",
+    ]
+
+    for (const field of possibleFields) {
+      if (variant[field] !== undefined && variant[field] !== null) {
+        const value = this.safeParseNumber(variant[field])
+        console.log(`✅ Found inventory in field '${field}': ${value}`)
+        return value
+      }
+    }
+
+    // Check if inventory is in a nested object
+    if (variant.inventory_items && Array.isArray(variant.inventory_items)) {
+      const totalInventory = variant.inventory_items.reduce((total, item) => {
+        const itemQuantity = this.safeParseNumber(item.stocked_quantity || item.quantity || 0)
+        console.log(`📦 Inventory item quantity: ${itemQuantity}`)
+        return total + itemQuantity
+      }, 0)
+      console.log(`✅ Found inventory in inventory_items: ${totalInventory}`)
+      return totalInventory
+    }
+
+    // Check if there's an inventory object
+    if (variant.inventory && typeof variant.inventory === "object") {
+      const inventoryQty = this.safeParseNumber(
+        variant.inventory.stocked_quantity || variant.inventory.quantity || variant.inventory.available_quantity || 0,
+      )
+      console.log(`✅ Found inventory in inventory object: ${inventoryQty}`)
+      return inventoryQty
+    }
+
+    console.log(`⚠️ No inventory found for variant ${variant.id}, defaulting to 0`)
+    return 0
+  }
+
   private transformProductToRecord(product: Product, variant: ProductVariant): AlgoliaProductRecord {
     try {
       // Ensure we have required fields
       if (!product.id) throw new Error(`Missing product.id for ${product.title}`)
       if (!variant.id) throw new Error(`Missing variant.id for product ${product.id}`)
+
+      // FIXED: Use the new inventory extraction method
+      const stockedQuantity = this.extractInventoryQuantity(variant)
+
       const record: AlgoliaProductRecord = {
         objectID: `${product.id}_${variant.id}`,
         id: `${product.id}_${variant.id}`,
@@ -162,7 +212,7 @@ export class AlgoliaService {
         sku: variant.sku || "",
         price: this.safeParseNumber(variant.prices?.[0]?.amount) || 0,
         currency_code: variant.prices?.[0]?.currency_code || "usd",
-        stocked_quantity: this.safeParseNumber(variant.inventory_quantity) || 0,
+        stocked_quantity: stockedQuantity, // FIXED: Use extracted quantity
         created_at: this.safeParseDate(product.created_at),
         updated_at: this.safeParseDate(product.updated_at),
         status: product.status || "draft",
@@ -181,6 +231,7 @@ export class AlgoliaService {
         }
       }
 
+      console.log(`✅ Transformed record for ${product.title}: stocked_quantity = ${record.stocked_quantity}`)
       return record
     } catch (error) {
       console.error(`Error transforming product ${product.id} variant ${variant.id}:`, error)

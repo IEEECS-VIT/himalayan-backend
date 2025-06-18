@@ -5,6 +5,63 @@ dotenv.config() // 👈 This must come first!
 import { AlgoliaService } from "../services/algolia.service"
 import axios from "axios"
 
+// Improved inventory quantity extraction
+// Replace getVariantInventoryQuantity with this more reliable version
+async function getVariantInventoryQuantity(variantId: string): Promise<number> {
+  try {
+    console.log(`\n🔄 Fetching inventory directly for variant ${variantId}`);
+    
+    // Make direct API call to inventory endpoint
+    const response = await axios.get(`${process.env.MEDUSA_BACKEND_URL}/admin/variants/${variantId}/inventory`, {
+      headers: {
+        Authorization: `Bearer ${process.env.MEDUSA_ADMIN_API_KEY}`
+      }
+    });
+
+    const inventory = response.data.variant;
+    console.log("Raw inventory response:", JSON.stringify(inventory, null, 2));
+
+    // Extract quantity from the direct inventory response
+    if (inventory.inventory?.length > 0) {
+      const total = inventory.inventory.reduce((sum: number, item: any) => {
+        return sum + (item.stocked_quantity || item.available_quantity || 0);
+      }, 0);
+      console.log(`✅ Found inventory: ${total}`);
+      return total;
+    }
+
+    console.log("❌ No inventory data in direct response");
+    return 0;
+  } catch (error) {
+    console.error("Failed to fetch inventory:", error.response?.data || error.message);
+    return 0;
+  }
+}
+
+// Enhanced debugging function
+function debugVariantInventoryStructure(variant: any) {
+  console.log(`\n🔍 DETAILED INVENTORY DEBUG for variant ${variant.id}:`)
+  console.log(`manage_inventory: ${variant.manage_inventory}`)
+  console.log(`allow_backorder: ${variant.allow_backorder}`)
+  
+  // Show all quantity-related fields
+  Object.keys(variant).forEach(key => {
+    if (key.toLowerCase().includes('inventory') || 
+        key.toLowerCase().includes('stock') || 
+        key.toLowerCase().includes('quantity')) {
+      console.log(`${key}:`, JSON.stringify(variant[key], null, 2))
+    }
+  })
+  
+  // Deep dive into inventory_items
+  if (variant.inventory_items) {
+    console.log('\nInventory Items Structure:')
+    variant.inventory_items.forEach((item: any, i: number) => {
+      console.log(`  Item ${i}:`, JSON.stringify(item, null, 2))
+    })
+  }
+}
+
 async function syncPublishedProducts() {
   console.log("=== SYNCING YOUR PUBLISHED MEDUSA PRODUCTS ===")
 
@@ -38,15 +95,29 @@ async function syncPublishedProducts() {
       throw new Error("Medusa backend not accessible")
     }
 
-    // Step 2: Get your published products from Medusa
+    // Step 2: Get your published products from Medusa with EXPANDED inventory data
     console.log("\n📦 Fetching published products from your Medusa store...")
 
     let publishedProducts
     try {
+      // FIXED: Improved expand parameters for better inventory data
+      const expandParams = [
+       "variants",
+  "variants.prices",
+  "variants.inventory_items",
+  "variants.inventory_items.inventory_levels",
+  "inventory_items",
+  "inventory_items.inventory_levels",
+  "categories",
+  "tags"
+      ].join(",")
+
+      console.log("🔍 Using expand parameters:", expandParams)
+
       // Try store API first (public, published products only)
       const response = await axios.get(`${medusaUrl}/store/products`, {
         params: {
-          expand: "variants,variants.prices,categories,tags",
+          expand: expandParams,
           limit: 1000,
         },
         timeout: 10000,
@@ -59,13 +130,24 @@ async function syncPublishedProducts() {
 
       // Fallback to admin API if available
       if (process.env.MEDUSA_ADMIN_API_KEY) {
+        const expandParams = [
+          "variants",
+          "variants.prices", 
+          "variants.inventory_items",
+          "variants.inventory_items.inventory_levels",
+          "inventory_items",
+          "inventory_items.inventory_levels",
+          "categories",
+          "tags",
+        ].join(",")
+
         const adminResponse = await axios.get(`${medusaUrl}/admin/products`, {
           headers: {
             Authorization: `Bearer ${process.env.MEDUSA_ADMIN_API_KEY}`,
             "Content-Type": "application/json",
           },
           params: {
-            expand: "variants,variants.prices,categories,tags",
+            expand: expandParams,
             status: ["published"],
             limit: 1000,
           },
@@ -79,7 +161,17 @@ async function syncPublishedProducts() {
       }
     }
 
-    // Step 3: Debug the actual product structure
+    // Add this debugging code right after fetching publishedProducts
+    console.log("\n🧪 RAW INVENTORY DATA TEST:")
+    if (publishedProducts.length > 0) {
+      const testProduct = publishedProducts[0]
+      if (testProduct.variants && testProduct.variants.length > 0) {
+        const testVariant = testProduct.variants[0]
+        console.log("Full variant object:", JSON.stringify(testVariant, null, 2))
+      }
+    }
+
+    // Step 3: Debug the actual product structure - ENHANCED
     console.log("\n🔍 DEBUGGING PRODUCT STRUCTURE:")
     if (publishedProducts.length > 0) {
       const sampleProduct = publishedProducts[0]
@@ -87,8 +179,30 @@ async function syncPublishedProducts() {
       console.log("Sample product:", JSON.stringify(sampleProduct, null, 2).slice(0, 1000) + "...")
 
       if (sampleProduct.variants && sampleProduct.variants.length > 0) {
-        console.log("Sample variant keys:", Object.keys(sampleProduct.variants[0]))
-        console.log("Sample variant:", JSON.stringify(sampleProduct.variants[0], null, 2).slice(0, 500) + "...")
+        const sampleVariant = sampleProduct.variants[0]
+        console.log("Sample variant keys:", Object.keys(sampleVariant))
+        console.log("Sample variant:", JSON.stringify(sampleVariant, null, 2).slice(0, 1000) + "...")
+
+        // ENHANCED: Debug inventory fields specifically
+        console.log("\n🔍 INVENTORY DEBUGGING:")
+        console.log("variant.inventory_quantity:", sampleVariant.inventory_quantity)
+        console.log("variant.quantity:", sampleVariant.quantity)
+        console.log("variant.stock_quantity:", sampleVariant.stock_quantity)
+        console.log("variant.manage_inventory:", sampleVariant.manage_inventory)
+        console.log("variant.allow_backorder:", sampleVariant.allow_backorder)
+        console.log("variant.inventory_items:", sampleVariant.inventory_items)
+        console.log("variant.inventory:", sampleVariant.inventory)
+
+        // Check all possible inventory-related fields
+        Object.keys(sampleVariant).forEach((key) => {
+          if (
+            key.toLowerCase().includes("inventory") ||
+            key.toLowerCase().includes("stock") ||
+            key.toLowerCase().includes("quantity")
+          ) {
+            console.log(`Found inventory-related field '${key}':`, sampleVariant[key])
+          }
+        })
       }
     }
 
@@ -111,13 +225,13 @@ async function syncPublishedProducts() {
     // Wait for index to be cleared
     await new Promise((resolve) => setTimeout(resolve, 2000))
 
-    // Step 6: Transform and index products (FIXED VERSION)
+    // Step 6: Transform and index products (UPDATED VERSION with improved inventory handling)
     console.log("📤 Transforming and indexing products to Algolia...")
 
     // Transform each product into individual variant records matching your CSV format
     const algoliaRecords: any[] = []
 
-    publishedProducts.forEach((product: any) => {
+    for (const product of publishedProducts) {
       if (!product.variants || product.variants.length === 0) {
         console.log(`⚠️ Product ${product.title} has no variants, creating default variant`)
 
@@ -144,10 +258,16 @@ async function syncPublishedProducts() {
           updated_at: product.updated_at,
         }
         algoliaRecords.push(record)
-        return
+        continue
       }
 
-      product.variants.forEach((variant: any) => {
+      // Updated variant processing with improved inventory extraction
+      for (const variant of product.variants) {
+        // Debug the variant structure for the first variant
+        if (variant === product.variants[0]) {
+          debugVariantInventoryStructure(variant)
+        }
+
         // Get the primary price
         const primaryPrice = variant.prices?.[0] || null
 
@@ -156,18 +276,21 @@ async function syncPublishedProducts() {
         let option_value = ""
 
         if (variant.options && variant.options.length > 0) {
-          // Take the first option (most common case)
           const firstOption = variant.options[0]
           option_name = firstOption.option?.title || firstOption.option_id || ""
           option_value = firstOption.value || ""
         }
 
-        // Build variant title (product + options)
+        // Build variant title
         let variant_title = product.title
         if (option_value) {
           variant_title = `${product.title} - ${option_value}`
         }
 
+        // Use the improved inventory extraction
+        const stockedQuantity = await getVariantInventoryQuantity(variant.id);
+
+     
         // Create record matching your CSV format exactly
         const record = {
           objectID: `${product.id}-${variant.id}`,
@@ -180,10 +303,14 @@ async function syncPublishedProducts() {
           currency_code: primaryPrice?.currency_code || "inr",
           option_name: option_name,
           option_value: option_value,
-          stocked_quantity: variant.inventory_quantity || 0,
+          stocked_quantity: stockedQuantity, // Using improved extraction
+          _inventory_debug: {
+    variant_id: variant.id,
+    api_response: `Fetched from /admin/variants/${variant.id}/inventory`
+  },
 
           // Additional useful fields for search/filtering
-          in_stock: (variant.inventory_quantity || 0) > 0,
+          in_stock: stockedQuantity > 0,
           category: product.categories?.[0]?.name || product.categories?.[0]?.title || "",
           categories: product.categories?.map((cat: any) => cat.name || cat.title) || [],
           tags: product.tags?.map((tag: any) => tag.value || tag.name) || [],
@@ -200,8 +327,8 @@ async function syncPublishedProducts() {
         console.log(
           `✅ Transformed: ${record.product_title} -> ${record.variant_title} (₹${record.price / 100}, ${record.stocked_quantity} in stock)`,
         )
-      })
-    })
+      }
+    }
 
     console.log(`\n📊 Created ${algoliaRecords.length} Algolia records from ${publishedProducts.length} products`)
 
@@ -211,7 +338,7 @@ async function syncPublishedProducts() {
       console.log(JSON.stringify(algoliaRecords[0], null, 2))
     }
 
-    // 🔥 FIX: Use the new indexAlgoliaRecords method instead of indexProducts
+    // Index to Algolia
     await algoliaService.indexAlgoliaRecords(algoliaRecords)
 
     // Step 7: Verify the sync worked
@@ -228,7 +355,9 @@ async function syncPublishedProducts() {
       console.log("\n🔍 Sample searchable products:")
       testResults.hits.forEach((hit, index) => {
         const price = hit.price ? `₹${hit.price / 100}` : "No price"
-        console.log(`  ${index + 1}. ${hit.product_title} - ${hit.variant_title} (${price})`)
+        console.log(
+          `  ${index + 1}. ${hit.product_title} - ${hit.variant_title} (${price}, Stock: ${hit.stocked_quantity})`,
+        )
       })
     }
 
@@ -246,7 +375,7 @@ async function syncPublishedProducts() {
       if (searchTest.hits.length > 0) {
         console.log("Search results:")
         searchTest.hits.forEach((hit, i) => {
-          console.log(`  ${i + 1}. ${hit.product_title} - ${hit.variant_title}`)
+          console.log(`  ${i + 1}. ${hit.product_title} - ${hit.variant_title} (Stock: ${hit.stocked_quantity})`)
         })
       }
     }
@@ -278,18 +407,45 @@ async function diagnoseMedusaSetup() {
     const health = await axios.get(`${medusaUrl}/health`)
     console.log("✅ Health check passed")
 
-    // Test store products endpoint
-    const storeProducts = await axios.get(`${medusaUrl}/store/products?limit=1&expand=variants,variants.prices`)
+    // Test store products endpoint with inventory expansion
+    const expandParams = [
+      "variants",
+      "variants.prices",
+      "variants.inventory_items",
+      "variants.inventory_items.inventory_levels",
+      "inventory_items",
+      "inventory_items.inventory_levels",
+      "categories",
+      "tags",
+    ].join(",")
+
+    const storeProducts = await axios.get(`${medusaUrl}/store/products?limit=1&expand=${expandParams}`)
     console.log(`✅ Store products endpoint accessible (${storeProducts.data.products?.length || 0} products)`)
 
     if (storeProducts.data.products && storeProducts.data.products.length > 0) {
       console.log("Sample product structure:")
-      console.log(JSON.stringify(storeProducts.data.products[0], null, 2))
+      const product = storeProducts.data.products[0]
+      console.log("Product keys:", Object.keys(product))
+
+      if (product.variants && product.variants.length > 0) {
+        console.log("Variant keys:", Object.keys(product.variants[0]))
+        console.log("Sample variant inventory data:")
+        const variant = product.variants[0]
+        Object.keys(variant).forEach((key) => {
+          if (
+            key.toLowerCase().includes("inventory") ||
+            key.toLowerCase().includes("stock") ||
+            key.toLowerCase().includes("quantity")
+          ) {
+            console.log(`  ${key}:`, variant[key])
+          }
+        })
+      }
     }
 
     // If admin key is available, test admin endpoint
     if (process.env.MEDUSA_ADMIN_API_KEY) {
-      const adminProducts = await axios.get(`${medusaUrl}/admin/products?limit=1&expand=variants,variants.prices`, {
+      const adminProducts = await axios.get(`${medusaUrl}/admin/products?limit=1&expand=${expandParams}`, {
         headers: {
           Authorization: `Bearer ${process.env.MEDUSA_ADMIN_API_KEY}`,
         },
