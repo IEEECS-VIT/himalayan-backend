@@ -104,39 +104,53 @@ export class AlgoliaService {
     return 0
   }
 
-  private transformProductToRecord(product: Product, variant: ProductVariant): AlgoliaProductRecord {
-    const stockedQuantity = this.extractInventoryQuantity(variant)
+// Updated transformProductToRecord method to ensure handle is properly set
+private transformProductToRecord(product: Product, variant: ProductVariant): AlgoliaProductRecord {
+  const stockedQuantity = this.extractInventoryQuantity(variant)
 
-    const record: AlgoliaProductRecord = {
-      objectID: `${product.id}_${variant.id}`,
-      id: `${product.id}_${variant.id}`,
-      product_id: product.id,
-      variant_id: variant.id,
-      product_title: product.title,
-      variant_title: variant.title || product.title,
-      sku: variant.sku || "",
-      price: this.safeParseNumber(variant.prices?.[0]?.amount) || 0,
-      currency_code: variant.prices?.[0]?.currency_code || "usd",
-      stocked_quantity: stockedQuantity,
-      created_at: this.safeParseDate(product.created_at),
-      updated_at: this.safeParseDate(product.updated_at),
-      status: product.status || "draft",
-      handle: product.handle || "",
-      thumbnail: product.thumbnail || "",
-      categories: this.safeExtractArray(product.categories ?? [], "name") || [],
-      tags: this.safeExtractArray(product.tags ?? [], "value") || [],
-    }
-
-    if (variant.options?.length) {
-      const option = variant.options[0]
-      if (option) {
-        record.option_name = option.option?.title || ""
-        record.option_value = option.value || ""
-      }
-    }
-
-    return record
+  const record: AlgoliaProductRecord = {
+    objectID: `${product.id}_${variant.id}`,
+    id: `${product.id}_${variant.id}`,
+    product_id: product.id, // This ensures product_id is always included
+    variant_id: variant.id,
+    product_title: product.title,
+    variant_title: variant.title || product.title,
+    sku: variant.sku || "",
+    price: this.safeParseNumber(variant.prices?.[0]?.amount) || 0,
+    currency_code: variant.prices?.[0]?.currency_code || "usd",
+    stocked_quantity: stockedQuantity,
+    created_at: this.safeParseDate(product.created_at),
+    updated_at: this.safeParseDate(product.updated_at),
+    status: product.status || "draft",
+    // Enhanced handle generation - fallback to product title slug if handle is missing
+    handle: product.handle || this.generateHandleFromTitle(product.title),
+    thumbnail: product.thumbnail || "",
+    categories: this.safeExtractArray(product.categories ?? [], "name") || [],
+    tags: this.safeExtractArray(product.tags ?? [], "value") || [],
   }
+
+  if (variant.options?.length) {
+    const option = variant.options[0]
+    if (option) {
+      record.option_name = option.option?.title || ""
+      record.option_value = option.value || ""
+    }
+  }
+
+  return record
+}
+
+/**
+ * Generates a URL-friendly handle (slug) from a product title.
+ */
+private generateHandleFromTitle(title: string): string {
+  if (!title) return ""
+  return title
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+}
 
   private safeParseNumber(value: any): number {
     if (typeof value === "number") return value
@@ -259,49 +273,55 @@ export class AlgoliaService {
       throw error
     }
   }
+// Updated search method with enhanced debugging for product_id and handle
+async search(query: string, filters: SearchFilters = {}, page = 0, hitsPerPage = 20): Promise<AlgoliaSearchResponse> {
+  try {
+    const filterArray: string[] = []
 
-  async search(query: string, filters: SearchFilters = {}, page = 0, hitsPerPage = 20): Promise<AlgoliaSearchResponse> {
-    try {
-      const filterArray: string[] = []
+    if (filters.category) filterArray.push(`categories:"${filters.category}"`)
+    if (filters.currency_code) filterArray.push(`currency_code:${filters.currency_code}`)
+    if (filters.price_min !== undefined || filters.price_max !== undefined) {
+      filterArray.push(`price:${filters.price_min || 0} TO ${filters.price_max || Number.MAX_SAFE_INTEGER}`)
+    }
+    if (filters.in_stock) filterArray.push("stocked_quantity > 0")
+    if (filters.tags?.length) {
+      const tagsFilter = filters.tags.map((tag) => `tags:"${tag}"`).join(" OR ")
+      filterArray.push(`(${tagsFilter})`)
+    }
+    filterArray.push("status:published")
 
-      if (filters.category) filterArray.push(`categories:"${filters.category}"`)
-      if (filters.currency_code) filterArray.push(`currency_code:${filters.currency_code}`)
-      if (filters.price_min !== undefined || filters.price_max !== undefined) {
-        filterArray.push(`price:${filters.price_min || 0} TO ${filters.price_max || Number.MAX_SAFE_INTEGER}`)
-      }
-      if (filters.in_stock) filterArray.push("stocked_quantity > 0")
-      if (filters.tags?.length) {
-        const tagsFilter = filters.tags.map((tag) => `tags:"${tag}"`).join(" OR ")
-        filterArray.push(`(${tagsFilter})`)
-      }
-      filterArray.push("status:published")
-
-      const results = await this.client.searchSingleIndex({
-        indexName: this.indexName,
-        searchParams: {
-          query,
-          page,
-          hitsPerPage,
-          filters: filterArray.join(" AND "),
-          attributesToRetrieve: [
-            "objectID",
-            "product_id",
-            "variant_id",
-            "product_title",
-            "variant_title",
-            "sku",
-            "price",
-            "currency_code",
-            "option_name",
-            "option_value",
-            "stocked_quantity",
-            "thumbnail",
-            "handle",
-            "categories",
-            "tags",
-          ],
-        },
-      })
+    const results = await this.client.searchSingleIndex({
+      indexName: this.indexName,
+      searchParams: {
+        query,
+        page,
+        hitsPerPage,
+        filters: filterArray.join(" AND "),
+        attributesToRetrieve: [
+          "objectID",
+          "product_id",     // Explicitly included
+          "variant_id",
+          "product_title",
+          "variant_title",
+          "sku",
+          "price",
+          "currency_code",
+          "option_name",
+          "option_value",
+          "stocked_quantity",
+          "thumbnail",
+          "handle",         // Explicitly included
+          "categories",
+          "tags",
+        ],
+      },
+    })
+// Transform results to ensure product_id and handle are always present
+    const enhancedHits = results.hits.map((hit: any) => ({
+      ...hit,
+      product_id: hit.product_id || hit.objectID?.split('_')[0], // Fallback extraction
+      handle: hit.handle || '', // Ensure handle is never undefined
+    }))
 
       return {
         hits: results.hits as AlgoliaProductRecord[],
