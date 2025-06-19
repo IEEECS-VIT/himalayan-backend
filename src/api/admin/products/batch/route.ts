@@ -12,29 +12,17 @@ type BatchProductWorkflowInput = {
     height?: number
     width?: number
     weight?: number
+    sku?: string
+    barcode?: string
+    manage_inventory?: boolean
+    price: {
+      amount: number
+      currency_code: string
+      region_id?: string
+    }
     images?: Array<{
       url: string
       alt_text?: string
-    }>
-    options?: Array<{
-      title: string
-      values: string[]
-    }>
-    variants?: Array<{
-      title: string
-      sku?: string
-      barcode?: string
-      manage_inventory?: boolean
-      length?: number
-      height?: number
-      width?: number
-      weight?: number
-      options: Record<string, string>
-      prices: Array<{
-        amount: number
-        currency_code: string
-        region_id?: string
-      }>
     }>
     metadata?: Record<string, any>
   }>
@@ -49,30 +37,17 @@ type BatchProductWorkflowInput = {
     height?: number
     width?: number
     weight?: number
+    sku?: string
+    barcode?: string
+    manage_inventory?: boolean
+    price?: {
+      amount: number
+      currency_code: string
+      region_id?: string
+    }
     images?: Array<{
       url: string
       alt_text?: string
-    }>
-    options?: Array<{
-      title: string
-      values: string[]
-    }>
-    variants?: Array<{
-      id?: string
-      title: string
-      sku?: string
-      barcode?: string
-      manage_inventory?: boolean
-      length?: number
-      height?: number
-      width?: number
-      weight?: number
-      options: Record<string, string>
-      prices: Array<{
-        amount: number
-        currency_code: string
-        region_id?: string
-      }>
     }>
     metadata?: Record<string, any>
     [key: string]: any
@@ -128,46 +103,24 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
           })
         }
 
-        // Validate variants if provided
-        if (product.variants) {
-          for (const [vIndex, variant] of product.variants.entries()) {
-            console.log(`Validating variant ${vIndex + 1} for product ${index + 1}:`, JSON.stringify(variant, null, 2))
-            
-            if (!variant.title) {
-              console.log(`❌ Variant ${vIndex + 1} missing title`)
-              return res.status(400).json({
-                type: "validation_error",
-                message: `Variant ${vIndex + 1} in product ${index + 1} must have a title`,
-                product_index: index,
-                variant_index: vIndex
-              })
-            }
+        // Validate price (required for simple products)
+        if (!product.price) {
+          console.log(`❌ Product ${index + 1} missing price`)
+          return res.status(400).json({
+            type: "validation_error",
+            message: `Product ${index + 1} must have a price`,
+            product_index: index
+          })
+        }
 
-            if (!variant.prices || variant.prices.length === 0) {
-              console.log(`❌ Variant ${vIndex + 1} missing prices`)
-              return res.status(400).json({
-                type: "validation_error",
-                message: `Variant ${vIndex + 1} in product ${index + 1} must have at least one price`,
-                product_index: index,
-                variant_index: vIndex
-              })
-            }
-
-            // Validate each price
-            for (const [pIndex, price] of variant.prices.entries()) {
-              if (!price.amount || !price.currency_code) {
-                console.log(`❌ Price ${pIndex + 1} invalid`)
-                return res.status(400).json({
-                  type: "validation_error",
-                  message: `Price ${pIndex + 1} in variant ${vIndex + 1} must have amount and currency_code`,
-                  product_index: index,
-                  variant_index: vIndex,
-                  price_index: pIndex,
-                  received: price
-                })
-              }
-            }
-          }
+        if (!product.price.amount || !product.price.currency_code) {
+          console.log(`❌ Product ${index + 1} has invalid price`)
+          return res.status(400).json({
+            type: "validation_error",
+            message: `Product ${index + 1} price must have amount and currency_code`,
+            product_index: index,
+            received: product.price
+          })
         }
       }
       console.log('✅ Create products validation passed')
@@ -186,6 +139,17 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
             message: `Update operation ${index + 1} must include product 'id'`,
             product_index: index,
             received: product
+          })
+        }
+
+        // Validate price if provided
+        if (product.price && (!product.price.amount || !product.price.currency_code)) {
+          console.log(`❌ Update product ${index + 1} has invalid price`)
+          return res.status(400).json({
+            type: "validation_error",
+            message: `Product ${index + 1} price must have amount and currency_code when provided`,
+            product_index: index,
+            received: product.price
           })
         }
       }
@@ -218,7 +182,50 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     }
 
     console.log('✅ Workflow function validated')
-    console.log('About to execute batch workflow with input:', JSON.stringify(input, null, 2))
+
+    // Transform simple product structure to Medusa's expected format
+    const transformedInput = {
+      ...input,
+      create: input.create?.map(product => ({
+        ...product,
+        // Create a default variant for each product
+        variants: [{
+          title: product.title,
+          sku: product.sku,
+          barcode: product.barcode,
+          manage_inventory: product.manage_inventory,
+          length: product.length,
+          height: product.height,
+          width: product.width,
+          weight: product.weight,
+          options: { "Default": "Default" },
+          prices: [product.price]
+        }],
+        // Add default option
+        options: [{
+          title: "Default",
+          values: ["Default"]
+        }]
+      })),
+      update: input.update?.map(product => ({
+        ...product,
+        // Transform price to variant format if provided
+        variants: product.price ? [{
+          title: product.title || "Default",
+          sku: product.sku,
+          barcode: product.barcode,
+          manage_inventory: product.manage_inventory,
+          length: product.length,
+          height: product.height,
+          width: product.width,
+          weight: product.weight,
+          options: { "Default": "Default" },
+          prices: [product.price]
+        }] : undefined
+      }))
+    }
+
+    console.log('About to execute batch workflow with transformed input:', JSON.stringify(transformedInput, null, 2))
 
     // Execute batch products workflow with enhanced error catching
     let workflowResult
@@ -228,7 +235,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       console.log('Workflow instance methods:', Object.keys(workflowInstance))
       
       workflowResult = await workflowInstance.run({
-        input: input
+        input: transformedInput
       })
       
       console.log('✅ Workflow executed successfully')
@@ -263,15 +270,14 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     // Add helper data for inventory management
     if (result?.created && Array.isArray(result.created)) {
       console.log('Processing created products for inventory data...')
-      responseData.variant_ids = result.created.flatMap(product => {
-        console.log('Processing product:', JSON.stringify(product, null, 2))
-        return product.variants?.map(variant => ({
-          variant_id: variant.id,
-          sku: variant.sku,
-          product_title: product.title
-        })) || []
-      })
-      console.log('Variant IDs for inventory:', responseData.variant_ids)
+      responseData.product_ids = result.created.map(product => ({
+        product_id: product.id,
+        title: product.title,
+        handle: product.handle,
+        variant_id: product.variants?.[0]?.id,
+        sku: product.variants?.[0]?.sku
+      }))
+      console.log('Product IDs for inventory:', responseData.product_ids)
     }
 
     console.log('Final response data:', JSON.stringify(responseData, null, 2))
@@ -368,89 +374,60 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   return res.status(200).json({
-    message: "Batch Products API",
+    message: "Batch Products API (Simplified - Single Products Only)",
     endpoints: {
-      POST: "Create, update, or delete products in batch",
+      POST: "Create, update, or delete single products in batch",
       note: "Use /api/inventory-management for inventory operations"
     },
     example_payload: {
       create: [
         {
-          title: "Sample Product",
-          handle: "sample-product",
-          description: "A sample product",
-          options: [
+          title: "Simple T-Shirt",
+          handle: "simple-t-shirt",
+          description: "A comfortable cotton t-shirt",
+          sku: "TSHIRT-001",
+          price: {
+            amount: 2000,
+            currency_code: "usd"
+          },
+          manage_inventory: true,
+          weight: 200,
+          images: [
             {
-              title: "Size",
-              values: ["Small", "Medium", "Large"]
-            },
-            {
-              title: "Color", 
-              values: ["Red", "Blue", "Green"]
-            }
-          ],
-          variants: [
-            {
-              title: "Small Red",
-              sku: "SAMPLE-001-SM-RED",
-              options: {
-                "Size": "Small",
-                "Color": "Red"
-              },
-              prices: [
-                {
-                  amount: 1000,
-                  currency_code: "usd"
-                }
-              ]
-            },
-            {
-              title: "Medium Blue",
-              sku: "SAMPLE-002-MD-BLUE", 
-              options: {
-                "Size": "Medium",
-                "Color": "Blue"
-              },
-              prices: [
-                {
-                  amount: 1200,
-                  currency_code: "usd"
-                }
-              ]
+              url: "https://example.com/tshirt.jpg",
+              alt_text: "Blue cotton t-shirt"
             }
           ]
+        },
+        {
+          title: "Coffee Mug",
+          handle: "coffee-mug",
+          description: "Ceramic coffee mug",
+          sku: "MUG-001",
+          price: {
+            amount: 1500,
+            currency_code: "usd"
+          },
+          manage_inventory: true,
+          weight: 300
         }
       ]
     },
-    simple_example: {
-      create: [
+    update_example: {
+      update: [
         {
-          title: "Simple Product",
-          handle: "simple-product",
-          description: "A simple product with default options",
-          options: [
-            {
-              title: "Default Option",
-              values: ["Default Value"]
-            }
-          ],
-          variants: [
-            {
-              title: "Default Variant",
-              sku: "SIMPLE-001",
-              options: {
-                "Default Option": "Default Value"
-              },
-              prices: [
-                {
-                  amount: 1000,
-                  currency_code: "usd"
-                }
-              ]
-            }
-          ]
+          id: "prod_123456",
+          title: "Updated T-Shirt",
+          description: "Updated description",
+          price: {
+            amount: 2200,
+            currency_code: "usd"
+          }
         }
       ]
+    },
+    delete_example: {
+      delete: ["prod_123456", "prod_789012"]
     },
     debug_info: {
       timestamp: new Date().toISOString(),
