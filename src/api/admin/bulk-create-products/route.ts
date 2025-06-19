@@ -8,7 +8,7 @@ import {
   updateProductVariantsWorkflow,
 } from "@medusajs/medusa/core-flows"
 import multer from "multer"
-import { parseCSVToProducts } from "../../../utils/csv-parser"
+import { parseCSVToProducts, validateCSVStructure } from "../../../utils/csv-parser"
 
 // Configure multer for file uploads
 const upload = multer({
@@ -85,6 +85,15 @@ async function handleBulkUpload(req: MedusaRequest, res: MedusaResponse) {
       })
     }
 
+    // Validate CSV structure
+    const validation = validateCSVStructure(products)
+    if (!validation.isValid) {
+      return res.status(400).json({
+        error: "CSV validation failed",
+        validation_errors: validation.errors,
+      })
+    }
+
     console.log(`Parsed ${products.length} products from CSV`)
 
     // 1. Fetch the stock location by name
@@ -95,7 +104,7 @@ async function handleBulkUpload(req: MedusaRequest, res: MedusaResponse) {
 
     if (stockLocations.length === 0) {
       return res.status(404).json({
-        error: `Stock location '${[stock_loc_name]}' not found. Please check the stock location name.`,
+        error: `Stock location '${stock_loc_name}' not found. Please check the stock location name.`,
       })
     }
 
@@ -110,108 +119,148 @@ async function handleBulkUpload(req: MedusaRequest, res: MedusaResponse) {
 
     if (shippingProfiles.length === 0) {
       return res.status(404).json({
-        error: `Shipping profile '${[stock_loc_name]}' not found. Please check the shipping profile name.`,
+        error: `Shipping profile '${stock_loc_name}' not found. Please check the shipping profile name.`,
       })
     }
 
     const shippingProfile = shippingProfiles[0]
     console.log(`Using shipping profile: ${shippingProfile.name} (ID: ${shippingProfile.id})`)
 
-    // 3. Handle collections and categories - create if they don't exist
+    // 3. Handle collections and categories - find existing ones only
     const productModuleService = container.resolve(Modules.PRODUCT)
 
     // Get all unique collection and category names from CSV
-    const collectionNames = [...new Set(products.filter((p) => p.collection_name).map((p) => p.collection_name))].filter((name): name is string => typeof name === "string")
-    const categoryNames = [...new Set(products.filter((p) => p.category_name).map((p) => p.category_name))].filter((name): name is string => typeof name === "string")
+    const collectionNames = [
+      ...new Set(
+        products
+          .filter((p) => p.collection_name && p.collection_name.trim() !== "")
+          .map((p) => p.collection_name ? p.collection_name.trim() : ""),
+      ),
+    ]
+
+    const categoryNames = [
+      ...new Set(
+        products
+          .filter((p) => typeof p.category_name === "string" && p.category_name && p.category_name.trim() !== "")
+          .map((p) => (p.category_name ? p.category_name.trim() : "")),
+      ),
+    ]
 
     console.log("Collection names from CSV:", collectionNames)
     console.log("Category names from CSV:", categoryNames)
 
-    // Fetch existing collections
-    const existingCollections =
-      collectionNames.length > 0
-        ? await productModuleService.listProductCollections({
-            title: collectionNames,
-          })
-        : []
-
-    // Fetch existing categories
-    const existingCategories =
-      categoryNames.length > 0
-        ? await productModuleService.listProductCategories({
-            name: categoryNames,
-          })
-        : []
+    // Fetch ALL existing collections and categories for case-insensitive matching
+    const allExistingCollections = await productModuleService.listProductCollections({})
+    const allExistingCategories = await productModuleService.listProductCategories({})
 
     console.log(
-      "Found existing collections:",
-      existingCollections.map((c) => c.title),
+      "All existing collections:",
+      allExistingCollections.map((c) => c.title),
     )
     console.log(
-      "Found existing categories:",
-      existingCategories.map((c) => c.name),
+      "All existing categories:",
+      allExistingCategories.map((c) => c.name),
     )
 
-    // Create maps for quick lookup
-    const collectionsMap = new Map(existingCollections.map((collection) => [collection.title, collection.id]))
-    const categoriesMap = new Map(existingCategories.map((category) => [category.name, category.id]))
+    // Create case-insensitive maps for collections and categories
+    const collectionsMap = new Map<string, { id: string; originalName: string }>()
+    const categoriesMap = new Map<string, { id: string; originalName: string }>()
 
-    // Find missing collections and categories
-    const missingCollections = collectionNames.filter((name) => !collectionsMap.has(name))
-    const missingCategories = categoryNames.filter((name) => !categoriesMap.has(name))
+    // Build collections map with case-insensitive keys
+    allExistingCollections.forEach((collection) => {
+      if (collection.title && typeof collection.title === "string") {
+        const lowerCaseTitle = collection.title.toLowerCase()
+        collectionsMap.set(lowerCaseTitle, {
+          id: collection.id,
+          originalName: collection.title,
+        })
+      }
+    })
 
-    let createdCollectionsCount = 0
-    let createdCategoriesCount = 0
+    // Build categories map with case-insensitive keys
+    allExistingCategories.forEach((category) => {
+      if (category.name && typeof category.name === "string") {
+        const lowerCaseName = category.name.toLowerCase()
+        categoriesMap.set(lowerCaseName, {
+          id: category.id,
+          originalName: category.name,
+        })
+      }
+    })
 
-    // Create missing collections
+    // Find missing collections and categories (case-insensitive with null checks)
+    const missingCollections: string[] = []
+    const foundCollections: Array<{ csvName: string; dbName: string; id: string }> = []
+
+    collectionNames.forEach((collectionName) => {
+      if (collectionName && typeof collectionName === "string") {
+        const lowerCaseName = collectionName.toLowerCase()
+        if (collectionsMap.has(lowerCaseName)) {
+          const found = collectionsMap.get(lowerCaseName)!
+          foundCollections.push({
+            csvName: collectionName,
+            dbName: found.originalName,
+            id: found.id,
+          })
+        } else {
+          missingCollections.push(collectionName)
+        }
+      }
+    })
+
+    const missingCategories: string[] = []
+    const foundCategories: Array<{ csvName: string; dbName: string; id: string }> = []
+
+    categoryNames.forEach((categoryName) => {
+      if (categoryName && typeof categoryName === "string") {
+        const lowerCaseName = categoryName.toLowerCase()
+        if (categoriesMap.has(lowerCaseName)) {
+          const found = categoriesMap.get(lowerCaseName)!
+          foundCategories.push({
+            csvName: categoryName,
+            dbName: found.originalName,
+            id: found.id,
+          })
+        } else {
+          missingCategories.push(categoryName)
+        }
+      }
+    })
+
+    // Log findings
+    if (foundCollections.length > 0) {
+      console.log("✅ Found collections:")
+      foundCollections.forEach((col) => {
+        console.log(`  - CSV: "${col.csvName}" → DB: "${col.dbName}" (ID: ${col.id})`)
+      })
+    }
+
+    if (foundCategories.length > 0) {
+      console.log("✅ Found categories:")
+      foundCategories.forEach((cat) => {
+        console.log(`  - CSV: "${cat.csvName}" → DB: "${cat.dbName}" (ID: ${cat.id})`)
+      })
+    }
+
     if (missingCollections.length > 0) {
-      console.log("Creating missing collections:", missingCollections)
-
-      for (const collectionName of missingCollections) {
-        try {
-          const newCollection = await productModuleService.createProductCollections({
-            title: collectionName,
-            handle: collectionName
-              .toLowerCase()
-              .replace(/\s+/g, "-")
-              .replace(/[^a-z0-9-]/g, ""),
-          })
-
-          collectionsMap.set(collectionName, newCollection.id)
-          createdCollectionsCount++
-          console.log(`✅ Created collection: "${collectionName}" (ID: ${newCollection.id})`)
-        } catch (error) {
-          console.error(`❌ Failed to create collection "${collectionName}":`, error.message)
-        }
-      }
+      console.warn("⚠️ Collections not found in database:", missingCollections)
     }
 
-    // Create missing categories
     if (missingCategories.length > 0) {
-      console.log("Creating missing categories:", missingCategories)
-
-      for (const categoryName of missingCategories) {
-        try {
-          const newCategory = await productModuleService.createProductCategories({
-            name: categoryName,
-            handle: categoryName
-              .toLowerCase()
-              .replace(/\s+/g, "-")
-              .replace(/[^a-z0-9-]/g, ""),
-            is_active: true,
-          })
-
-          categoriesMap.set(categoryName, newCategory.id)
-          createdCategoriesCount++
-          console.log(`✅ Created category: "${categoryName}" (ID: ${newCategory.id})`)
-        } catch (error) {
-          console.error(`❌ Failed to create category "${categoryName}":`, error.message)
-        }
-      }
+      console.warn("⚠️ Categories not found in database:", missingCategories)
     }
 
-    console.log(`Collections: ${existingCollections.length} existing, ${createdCollectionsCount} created`)
-    console.log(`Categories: ${existingCategories.length} existing, ${createdCategoriesCount} created`)
+    // Create final lookup maps for product assignment
+    const finalCollectionsMap = new Map<string, string>()
+    const finalCategoriesMap = new Map<string, string>()
+
+    foundCollections.forEach((col) => {
+      finalCollectionsMap.set(col.csvName, col.id)
+    })
+
+    foundCategories.forEach((cat) => {
+      finalCategoriesMap.set(cat.csvName, cat.id)
+    })
 
     // 4. Check for existing inventory items and separate new vs existing
     const inventoryModuleService = container.resolve(Modules.INVENTORY)
@@ -247,13 +296,6 @@ async function handleBulkUpload(req: MedusaRequest, res: MedusaResponse) {
     const newProducts: ProductWithVariants[] = []
     const existingProducts: ProductWithVariants[] = []
 
-    let createdProductsCount = 0
-    let createdInventoryCount = 0
-    let updatedInventoryCount = 0
-    let updatedProductsCount = 0
-    let collectionsAssigned = 0
-    let categoriesAssigned = 0
-
     for (const product of products) {
       const newVariants: ProductVariant[] = []
       const existingVariants: ProductVariant[] = []
@@ -286,6 +328,15 @@ async function handleBulkUpload(req: MedusaRequest, res: MedusaResponse) {
 
     console.log(`New products to create: ${newProducts.length}`)
     console.log(`Existing products to update: ${existingProducts.length}`)
+
+    let createdProductsCount = 0
+    let createdInventoryCount = 0
+    let updatedInventoryCount = 0
+    let updatedProductsCount = 0
+    let collectionsAssigned = 0
+    let categoriesAssigned = 0
+    let collectionsSkipped = 0
+    let categoriesSkipped = 0
 
     // 5. Create new products and inventory items
     if (newProducts.length > 0) {
@@ -340,21 +391,33 @@ async function handleBulkUpload(req: MedusaRequest, res: MedusaResponse) {
             }
 
             // Add collection if it exists
-            if (product.collection_name && collectionsMap.has(product.collection_name)) {
-              productData.collection_id = collectionsMap.get(product.collection_name)
+            if (product.collection_name && finalCollectionsMap.has(product.collection_name)) {
+              productData.collection_id = finalCollectionsMap.get(product.collection_name)
               collectionsAssigned++
-              console.log(`✅ Assigned collection "${product.collection_name}" to product "${product.title}"`)
+              const foundCol = foundCollections.find((c) => c.csvName === product.collection_name)
+              console.log(
+                `✅ Assigned collection "${product.collection_name}" (DB: "${foundCol?.dbName}") to product "${product.title}"`,
+              )
             } else if (product.collection_name) {
-              console.warn(`⚠️ Collection "${product.collection_name}" not found for product "${product.title}"`)
+              collectionsSkipped++
+              console.warn(
+                `⚠️ Collection "${product.collection_name}" not found in database - skipping assignment for product "${product.title}"`,
+              )
             }
 
             // Add categories if they exist
-            if (product.category_name && categoriesMap.has(product.category_name)) {
-              productData.categories = [{ id: categoriesMap.get(product.category_name) }]
+            if (product.category_name && finalCategoriesMap.has(product.category_name)) {
+              productData.categories = [{ id: finalCategoriesMap.get(product.category_name) }]
               categoriesAssigned++
-              console.log(`✅ Assigned category "${product.category_name}" to product "${product.title}"`)
+              const foundCat = foundCategories.find((c) => c.csvName === product.category_name)
+              console.log(
+                `✅ Assigned category "${product.category_name}" (DB: "${foundCat?.dbName}") to product "${product.title}"`,
+              )
             } else if (product.category_name) {
-              console.warn(`⚠️ Category "${product.category_name}" not found for product "${product.title}"`)
+              categoriesSkipped++
+              console.warn(
+                `⚠️ Category "${product.category_name}" not found in database - skipping assignment for product "${product.title}"`,
+              )
             }
 
             return productData
@@ -384,23 +447,33 @@ async function handleBulkUpload(req: MedusaRequest, res: MedusaResponse) {
             const updateData: any = {}
 
             // Update collection if specified and exists
-            if (product.collection_name && collectionsMap.has(product.collection_name)) {
-              updateData.collection_id = collectionsMap.get(product.collection_name)
+            if (product.collection_name && finalCollectionsMap.has(product.collection_name)) {
+              updateData.collection_id = finalCollectionsMap.get(product.collection_name)
               collectionsAssigned++
-              console.log(`✅ Updated collection "${product.collection_name}" for existing product "${product.title}"`)
+              const foundCol = foundCollections.find((c) => c.csvName === product.collection_name)
+              console.log(
+                `✅ Updated collection "${product.collection_name}" (DB: "${foundCol?.dbName}") for existing product "${product.title}"`,
+              )
             } else if (product.collection_name) {
+              collectionsSkipped++
               console.warn(
-                `⚠️ Collection "${product.collection_name}" not found for existing product "${product.title}"`,
+                `⚠️ Collection "${product.collection_name}" not found in database - skipping update for existing product "${product.title}"`,
               )
             }
 
             // Update categories if specified and exists
-            if (product.category_name && categoriesMap.has(product.category_name)) {
-              updateData.categories = [{ id: categoriesMap.get(product.category_name) }]
+            if (product.category_name && finalCategoriesMap.has(product.category_name)) {
+              updateData.categories = [{ id: finalCategoriesMap.get(product.category_name) }]
               categoriesAssigned++
-              console.log(`✅ Updated category "${product.category_name}" for existing product "${product.title}"`)
+              const foundCat = foundCategories.find((c) => c.csvName === product.category_name)
+              console.log(
+                `✅ Updated category "${product.category_name}" (DB: "${foundCat?.dbName}") for existing product "${product.title}"`,
+              )
             } else if (product.category_name) {
-              console.warn(`⚠️ Category "${product.category_name}" not found for existing product "${product.title}"`)
+              categoriesSkipped++
+              console.warn(
+                `⚠️ Category "${product.category_name}" not found in database - skipping update for existing product "${product.title}"`,
+              )
             }
 
             // Update product if there are changes
@@ -526,8 +599,6 @@ async function handleBulkUpload(req: MedusaRequest, res: MedusaResponse) {
       created: {
         products: createdProductsCount,
         inventory_items: createdInventoryCount,
-        collections: createdCollectionsCount,
-        categories: createdCategoriesCount,
       },
       updated: {
         products: updatedProductsCount,
@@ -536,8 +607,18 @@ async function handleBulkUpload(req: MedusaRequest, res: MedusaResponse) {
       associations: {
         collections_assigned: collectionsAssigned,
         categories_assigned: categoriesAssigned,
-        existing_collections: existingCollections.length,
-        existing_categories: existingCategories.length,
+        collections_skipped: collectionsSkipped,
+        categories_skipped: categoriesSkipped,
+        found_collections: foundCollections.map((c) => ({
+          csv_name: c.csvName,
+          db_name: c.dbName,
+        })),
+        found_categories: foundCategories.map((c) => ({
+          csv_name: c.csvName,
+          db_name: c.dbName,
+        })),
+        missing_collections: missingCollections,
+        missing_categories: missingCategories,
       },
       stockLocation: stockLocation.name,
       shippingProfile: shippingProfile.name,
@@ -550,8 +631,6 @@ async function handleBulkUpload(req: MedusaRequest, res: MedusaResponse) {
         variant_updates: updatedProductsCount,
         collections_processed: collectionNames.length,
         categories_processed: categoryNames.length,
-        new_collections_created: createdCollectionsCount,
-        new_categories_created: createdCategoriesCount,
       },
     })
   } catch (error) {

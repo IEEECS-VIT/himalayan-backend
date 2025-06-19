@@ -127,9 +127,24 @@ function transformCSVToProducts(csvData: CSVRow[]): ProductData[] {
 
     // Get collection and category from the first row (assuming all variants of a product have the same collection/category)
     const firstRow = rows[0]
-    const collection_name =
-      firstRow.collection && firstRow.collection.trim() !== "" ? firstRow.collection.trim() : undefined
-    const category_name = firstRow.category && firstRow.category.trim() !== "" ? firstRow.category.trim() : undefined
+
+    // Add better null/undefined checks
+    let collection_name: string | undefined
+    let category_name: string | undefined
+
+    if (firstRow.collection && typeof firstRow.collection === "string") {
+      const trimmed = firstRow.collection.trim()
+      collection_name = trimmed !== "" ? trimmed : undefined
+    } else {
+      collection_name = undefined
+    }
+
+    if (firstRow.category && typeof firstRow.category === "string") {
+      const trimmed = firstRow.category.trim()
+      category_name = trimmed !== "" ? trimmed : undefined
+    } else {
+      category_name = undefined
+    }
 
     return {
       title: productTitle,
@@ -142,51 +157,110 @@ function transformCSVToProducts(csvData: CSVRow[]): ProductData[] {
 }
 
 /**
- * Validate CSV structure
+ * Validate CSV structure and data
  */
-export function validateCSVStructure(csvData: CSVRow[]): { isValid: boolean; errors: string[] } {
+export function validateCSVStructure(products: ProductData[]): { isValid: boolean; errors: string[] } {
   const errors: string[] = []
-  const requiredFields = ["product_title", "variant_title", "sku", "price", "stocked_quantity"]
-  const optionalFields = ["collection", "category"]
 
-  if (csvData.length === 0) {
-    errors.push("CSV file is empty")
+  if (products.length === 0) {
+    errors.push("No valid products found in CSV")
     return { isValid: false, errors }
   }
 
-  // Check required fields
-  const firstRow = csvData[0]
-  const availableFields = Object.keys(firstRow)
+  // Validate each product
+  products.forEach((product, productIndex) => {
+    // Validate product title
+    if (!product.title || product.title.trim() === "") {
+      errors.push(`Product ${productIndex + 1}: Product title is required`)
+    }
 
-  requiredFields.forEach((field) => {
-    if (!availableFields.includes(field)) {
-      errors.push(`Missing required field: ${field}`)
+    // Validate variants
+    if (!product.variants || product.variants.length === 0) {
+      errors.push(`Product ${productIndex + 1} (${product.title}): At least one variant is required`)
+    } else {
+      // Track SKUs for duplicate checking
+      const skuSet = new Set<string>()
+
+      product.variants.forEach((variant, variantIndex) => {
+        const variantLabel = `Product ${productIndex + 1} (${product.title}), Variant ${variantIndex + 1}`
+
+        // Validate variant title
+        if (!variant.title || variant.title.trim() === "") {
+          errors.push(`${variantLabel}: Variant title is required`)
+        }
+
+        // Validate SKU
+        if (!variant.sku || variant.sku.trim() === "") {
+          errors.push(`${variantLabel}: SKU is required`)
+        } else {
+          // Check for duplicate SKUs within the same product
+          if (skuSet.has(variant.sku)) {
+            errors.push(`${variantLabel}: Duplicate SKU "${variant.sku}" found within the same product`)
+          }
+          skuSet.add(variant.sku)
+
+          // Validate SKU format (alphanumeric, hyphens, underscores only)
+          if (!/^[a-zA-Z0-9_-]+$/.test(variant.sku)) {
+            errors.push(
+              `${variantLabel}: SKU "${variant.sku}" contains invalid characters. Only letters, numbers, hyphens, and underscores are allowed`,
+            )
+          }
+        }
+
+        // Validate prices
+        if (!variant.prices || variant.prices.length === 0) {
+          errors.push(`${variantLabel}: At least one price is required`)
+        } else {
+          variant.prices.forEach((price, priceIndex) => {
+            if (!price.amount || price.amount <= 0) {
+              errors.push(`${variantLabel}, Price ${priceIndex + 1}: Price amount must be greater than 0`)
+            }
+
+            if (!price.currency_code || price.currency_code.trim() === "") {
+              errors.push(`${variantLabel}, Price ${priceIndex + 1}: Currency code is required`)
+            } else if (!/^[A-Z]{3}$/.test(price.currency_code.toUpperCase())) {
+              errors.push(
+                `${variantLabel}, Price ${priceIndex + 1}: Currency code "${price.currency_code}" must be a valid 3-letter ISO code (e.g., USD, EUR, INR)`,
+              )
+            }
+          })
+        }
+
+        // Validate stock quantity
+        if (variant.stocked_quantity < 0) {
+          errors.push(`${variantLabel}: Stock quantity cannot be negative`)
+        }
+      })
+    }
+
+    // Validate collection name format (if provided)
+    if (product.collection_name) {
+      if (product.collection_name.length > 100) {
+        errors.push(`Product ${productIndex + 1} (${product.title}): Collection name is too long (max 100 characters)`)
+      }
+    }
+
+    // Validate category name format (if provided)
+    if (product.category_name) {
+      if (product.category_name.length > 100) {
+        errors.push(`Product ${productIndex + 1} (${product.title}): Category name is too long (max 100 characters)`)
+      }
     }
   })
 
-  // Log optional fields that are present
-  optionalFields.forEach((field) => {
-    if (availableFields.includes(field)) {
-      console.log(`✅ Optional field found: ${field}`)
-    }
-  })
+  // Check for duplicate SKUs across all products
+  const allSkus = products.flatMap((product) => product.variants.map((variant) => variant.sku))
+  const skuCounts = allSkus.reduce(
+    (acc, sku) => {
+      acc[sku] = (acc[sku] || 0) + 1
+      return acc
+    },
+    {} as Record<string, number>,
+  )
 
-  // Validate data types and required values
-  csvData.forEach((row, index) => {
-    if (!row.product_title) {
-      errors.push(`Row ${index + 2}: product_title is required`)
-    }
-    if (!row.variant_title) {
-      errors.push(`Row ${index + 2}: variant_title is required`)
-    }
-    if (!row.sku) {
-      errors.push(`Row ${index + 2}: sku is required`)
-    }
-    if (!row.price || isNaN(Number.parseInt(row.price))) {
-      errors.push(`Row ${index + 2}: price must be a valid number`)
-    }
-    if (!row.stocked_quantity || isNaN(Number.parseInt(row.stocked_quantity))) {
-      errors.push(`Row ${index + 2}: stocked_quantity must be a valid number`)
+  Object.entries(skuCounts).forEach(([sku, count]) => {
+    if (count > 1) {
+      errors.push(`Duplicate SKU "${sku}" found across multiple products (${count} occurrences)`)
     }
   })
 
