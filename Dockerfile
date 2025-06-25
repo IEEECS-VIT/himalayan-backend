@@ -1,21 +1,21 @@
-# Use official Node.js LTS base image
 FROM node:20
 
-# Set working directory inside the container
 WORKDIR /app
 
-# Copy all files into the container
 COPY . .
 
-# Install dependencies using npm
 ENV NODE_OPTIONS="--max-old-space-size=1024"
+
+# Ensure latest npm is available
+RUN npm install -g npm@latest
+
+# Install dependencies including CLI (important!)
 RUN npm install --legacy-peer-deps
 
-# Build the Medusa backend
+# Build the app (optional depending on your build step)
 RUN npm run build
 
-# Expose default Medusa port
 EXPOSE 9000
 
-# Start the Medusa server
-CMD ["npm", "run", "start"]
+# Start using locally installed CLI from node_modules/.bin
+CMD ["npx", "medusa", "start"]
