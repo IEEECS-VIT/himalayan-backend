@@ -329,7 +329,7 @@ async search(query: string, filters: SearchFilters = {}, page = 0, hitsPerPage =
         page: results.page ?? 0,
         nbPages: results.nbPages ?? 0,
         hitsPerPage: results.hitsPerPage ?? hitsPerPage,
-        processingTimeMS: results.processingTimeMS,
+        processingTimeMS: results.processingTimeMS || 0,
         query: results.query,
       }
     } catch (error) {
