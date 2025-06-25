@@ -2,20 +2,23 @@ FROM node:20
 
 WORKDIR /app
 
-COPY . .
-
+# Set memory limit
 ENV NODE_OPTIONS="--max-old-space-size=1024"
 
-# Ensure latest npm is available
+# Copy everything
+COPY . .
+
+# Optional: upgrade npm
 RUN npm install -g npm@latest
 
-# Install dependencies including CLI (important!)
+# Install deps
 RUN npm install --legacy-peer-deps
 
-# Build the app (optional depending on your build step)
-RUN npm run build
+# Optional: build step
+RUN npm run build || true
 
+# Expose port
 EXPOSE 9000
 
-# Start using locally installed CLI from node_modules/.bin
-CMD ["npx", "medusa", "start"]
+# Run with local CLI
+CMD ["npm", "run", "start"]

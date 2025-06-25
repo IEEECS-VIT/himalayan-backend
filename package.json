@@ -13,9 +13,9 @@
     "medusa"
   ],
   "scripts": {
+    "start":"npx medusa start",
     "build": "medusa build && ln -s .medusa/server/public/ public",
     "seed": "medusa exec ./src/scripts/seed.ts",
-    "start": "medusa start",
     "dev": "medusa develop",
     "sync-products": "ts-node ./src/scripts/sync-products.ts",
     "predeploy": "medusa db:migrate",
