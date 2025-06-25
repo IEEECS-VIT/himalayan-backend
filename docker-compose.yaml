@@ -1,4 +1,5 @@
 version: "3.9"
+
 services:
   medusa:
     build: .
@@ -9,3 +10,4 @@ services:
     volumes:
       - .:/app
     restart: always
+    command: npm run start
