@@ -23,6 +23,5 @@ jobs:
         script: |
           cd himalayan-backend
           git pull origin main
-          npm install
-          npm run build
+          npm install --legacy-peer-deps && npm run predeploy && npm run build && npx medusa build
           pm2 restart medusa
