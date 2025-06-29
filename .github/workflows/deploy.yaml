@@ -23,6 +23,6 @@ jobs:
         script: |
           cd /home/ubuntu/medusa-server
           git pull origin main
-          docker-compose down
-          docker-compose build
-          docker-compose up -d
+          npm install
+          npm run build
+          pm2 restart medusa
