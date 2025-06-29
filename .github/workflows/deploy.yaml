@@ -21,7 +21,7 @@ jobs:
         username: ubuntu
         key: ${{ secrets.EC2_SSH_KEY }}
         script: |
-          cd /home/ubuntu/medusa-server
+          cd himalayan-backend
           git pull origin main
           npm install
           npm run build
