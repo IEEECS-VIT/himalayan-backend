@@ -102,7 +102,7 @@ async function syncPublishedProducts() {
         const record = {
           objectID: `${product.id}_default`, // Use underscore to match AlgoliaService format
           id: `${product.id}_default`,
-          product_id: product.id, // ✅ Added missing product_id
+          product_id: product.id, 
           variant_id: "default",
           product_title: product.title,
           variant_title: product.title,

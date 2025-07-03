@@ -18,3 +18,12 @@ EXPOSE 9000
 
 # Start Medusa server
 CMD ["npm", "run", "start"]
+
+
+
+
+
+
+
+
+
