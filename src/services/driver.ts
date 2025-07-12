@@ -1,7 +1,5 @@
-// src/services/driver.ts
-import { AwilixContainer } from "awilix"
-import { Driver } from "../models/driver"
-import { DriverRepository } from "../repositories/drivers"
+import type { Driver } from "../models/driver"
+import type { DriverRepository } from "../repositories/drivers"
 
 type CreateDriverData = {
   primary_mobile_number: string
@@ -44,6 +42,22 @@ class DriverService {
 
     if (!driver) {
       throw new Error("Driver not found")
+    }
+
+    // Validate required fields before updating
+    const requiredFields = [
+      "first_name",
+      "last_name",
+      "father_name",
+      "date_of_birth",
+      "blood_group",
+      "address",
+      "language",
+    ]
+    for (const field of requiredFields) {
+      if (!data[field]) {
+        throw new Error(`${field} is required for profile completion`)
+      }
     }
 
     Object.assign(driver, data)

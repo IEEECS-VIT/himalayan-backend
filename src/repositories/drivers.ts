@@ -1,5 +1,4 @@
-// src/repositories/driver.ts
-import { EntityManager, Repository } from "typeorm"
+import { type EntityManager, Repository } from "typeorm"
 import { Driver } from "../models/driver"
 
 export class DriverRepository extends Repository<Driver> {
@@ -9,19 +8,19 @@ export class DriverRepository extends Repository<Driver> {
 
   async findByPhoneNumber(phoneNumber: string): Promise<Driver | null> {
     return this.findOne({
-      where: { primary_mobile_number: phoneNumber }
+      where: { primary_mobile_number: phoneNumber },
     })
   }
 
   async findByReferralCode(referralCode: string): Promise<Driver | null> {
     return this.findOne({
-      where: { referral_code: referralCode }
+      where: { referral_code: referralCode },
     })
   }
 
   async findActiveDrivers(): Promise<Driver[]> {
     return this.find({
-      where: { status: "active" }
+      where: { status: "active" },
     })
   }
 
