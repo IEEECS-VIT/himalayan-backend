@@ -2287,7 +2287,7 @@
     retry-axios "^2.6.0"
     uuid "^9.0.0"
 
-"@medusajs/medusa@2.7.0":
+"@medusajs/medusa@^2.7.0":
   version "2.7.0"
   resolved "https://registry.npmjs.org/@medusajs/medusa/-/medusa-2.7.0.tgz"
   integrity sha512-fiR+16QNEIX4YRWLdygMws+W3PrpENPRasQmdx0kT/kE8iCJUC71nOtVQMTmTfGexxUJA9oo8iXG3EOIt3S7Qg==
