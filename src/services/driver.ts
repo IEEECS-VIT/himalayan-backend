@@ -1,5 +1,5 @@
 // src/services/driver.ts
-import { TransactionBaseService } from "@medusajs/medusa"
+import { AwilixContainer } from "awilix"
 import { Driver } from "../models/driver"
 import { DriverRepository } from "../repositories/drivers"
 
@@ -21,79 +21,63 @@ type UpdateDriverProfileData = {
   referral_code?: string
 }
 
-class DriverService extends TransactionBaseService {
-  protected driverRepository_: typeof DriverRepository
+class DriverService {
+  protected driverRepository_: DriverRepository
 
-  constructor(container) {
-    super(container)
-    this.driverRepository_ = container.driverRepository
+  constructor({ driverRepository }: { driverRepository: DriverRepository }) {
+    this.driverRepository_ = driverRepository
   }
 
   async createDriver(data: CreateDriverData): Promise<Driver> {
-    return this.atomicPhase_(async (transactionManager) => {
-      const driverRepo = transactionManager.withRepository(this.driverRepository_)
-      
-      // Check if driver already exists
-      const existingDriver = await driverRepo.findByPhoneNumber(data.primary_mobile_number)
-      if (existingDriver) {
-        throw new Error("Driver with this phone number already exists")
-      }
+    const existingDriver = await this.driverRepository_.findByPhoneNumber(data.primary_mobile_number)
 
-      const driver = driverRepo.create(data)
-      return await driverRepo.save(driver)
-    })
+    if (existingDriver) {
+      throw new Error("Driver with this phone number already exists")
+    }
+
+    const driver = this.driverRepository_.create(data)
+    return await this.driverRepository_.save(driver)
   }
 
   async updateDriverProfile(driverId: string, data: UpdateDriverProfileData): Promise<Driver> {
-    return this.atomicPhase_(async (transactionManager) => {
-      const driverRepo = transactionManager.withRepository(this.driverRepository_)
-      
-      const driver = await driverRepo.findOne({ where: { id: driverId } })
-      if (!driver) {
-        throw new Error("Driver not found")
-      }
+    const driver = await this.driverRepository_.findOne({ where: { id: driverId } })
 
-      // Update driver with profile data
-      Object.assign(driver, data)
-      driver.is_profile_complete = true
-      driver.status = "active"
+    if (!driver) {
+      throw new Error("Driver not found")
+    }
 
-      return await driverRepo.save(driver)
-    })
+    Object.assign(driver, data)
+    driver.is_profile_complete = true
+    driver.status = "active"
+
+    return await this.driverRepository_.save(driver)
   }
 
   async verifyDriverPhone(driverId: string): Promise<Driver> {
-    return this.atomicPhase_(async (transactionManager) => {
-      const driverRepo = transactionManager.withRepository(this.driverRepository_)
-      
-      const driver = await driverRepo.findOne({ where: { id: driverId } })
-      if (!driver) {
-        throw new Error("Driver not found")
-      }
+    const driver = await this.driverRepository_.findOne({ where: { id: driverId } })
 
-      driver.is_phone_verified = true
-      return await driverRepo.save(driver)
-    })
+    if (!driver) {
+      throw new Error("Driver not found")
+    }
+
+    driver.is_phone_verified = true
+    return await this.driverRepository_.save(driver)
   }
 
   async getDriverByPhoneNumber(phoneNumber: string): Promise<Driver | null> {
-    const driverRepo = this.activeManager_.withRepository(this.driverRepository_)
-    return await driverRepo.findByPhoneNumber(phoneNumber)
+    return await this.driverRepository_.findByPhoneNumber(phoneNumber)
   }
 
   async getDriverById(driverId: string): Promise<Driver | null> {
-    const driverRepo = this.activeManager_.withRepository(this.driverRepository_)
-    return await driverRepo.findOne({ where: { id: driverId } })
+    return await this.driverRepository_.findOne({ where: { id: driverId } })
   }
 
   async getAllDrivers(): Promise<Driver[]> {
-    const driverRepo = this.activeManager_.withRepository(this.driverRepository_)
-    return await driverRepo.find()
+    return await this.driverRepository_.find()
   }
 
   async getActiveDrivers(): Promise<Driver[]> {
-    const driverRepo = this.activeManager_.withRepository(this.driverRepository_)
-    return await driverRepo.findActiveDrivers()
+    return await this.driverRepository_.findActiveDrivers()
   }
 }
 
