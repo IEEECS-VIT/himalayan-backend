@@ -1,4 +1,4 @@
-import type { Driver } from "../models/driver"
+import type { Driver } from "../models/drivers"
 import type { DriverRepository } from "../repositories/drivers"
 
 type CreateDriverData = {
@@ -10,12 +10,12 @@ type UpdateDriverProfileData = {
   last_name: string
   father_name: string
   date_of_birth: Date
-  whatsapp_number?: string
+  whatsapp_number: string
   secondary_number?: string
   blood_group: string
   address: string
   language: string
-  profile_picture?: string
+  profile_picture: string
   referral_code?: string
 }
 
@@ -61,10 +61,14 @@ class DriverService {
     }
 
     Object.assign(driver, data)
-    driver.is_profile_complete = true
     driver.status = "active"
 
-    return await this.driverRepository_.save(driver)
+    const updatedDriver = await this.driverRepository_.save(driver)
+
+    // Now update profile status using repository method
+    await this.driverRepository_.updateProfileStatus(driverId, true)
+
+    return updatedDriver
   }
 
   async verifyDriverPhone(driverId: string): Promise<Driver> {
@@ -74,8 +78,13 @@ class DriverService {
       throw new Error("Driver not found")
     }
 
-    driver.is_phone_verified = true
-    return await this.driverRepository_.save(driver)
+    // Use repository method to verify phone
+    await this.driverRepository_.verifyPhone(driverId)
+
+    return {
+      ...driver,
+      is_phone_verified: true,
+    }
   }
 
   async getDriverByPhoneNumber(phoneNumber: string): Promise<Driver | null> {

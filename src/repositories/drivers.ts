@@ -1,5 +1,5 @@
 import { type EntityManager, Repository } from "typeorm"
-import { Driver } from "../models/driver"
+import { Driver } from "../models/drivers"
 
 export class DriverRepository extends Repository<Driver> {
   constructor(manager: EntityManager) {

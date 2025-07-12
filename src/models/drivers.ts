@@ -9,35 +9,35 @@ export class Driver {
   @Index()
   primary_mobile_number: string
 
-  @Column({ type: "varchar", length: 15, nullable: true })
-  whatsapp_number?: string
+  @Column({ type: "varchar", length: 15, nullable: false })
+  whatsapp_number: string
 
   @Column({ type: "varchar", length: 15, nullable: true })
   secondary_number?: string
 
-  @Column({ type: "varchar", length: 100, nullable: true })
-  first_name?: string
+  @Column({ type: "varchar", length: 100, nullable: false })
+  first_name: string
 
-  @Column({ type: "varchar", length: 100, nullable: true })
-  last_name?: string
+  @Column({ type: "varchar", length: 100, nullable: false })
+  last_name: string
 
-  @Column({ type: "varchar", length: 100, nullable: true })
-  father_name?: string
+  @Column({ type: "varchar", length: 100, nullable: false })
+  father_name: string
 
-  @Column({ type: "date", nullable: true })
-  date_of_birth?: Date
+  @Column({ type: "date", nullable: false })
+  date_of_birth: Date
 
-  @Column({ type: "varchar", length: 10, nullable: true })
-  blood_group?: string
+  @Column({ type: "varchar", length: 10, nullable: false })
+  blood_group: string
 
-  @Column({ type: "text", nullable: true })
-  address?: string
+  @Column({ type: "text", nullable: false })
+  address: string
 
-  @Column({ type: "varchar", length: 50, nullable: true })
-  language?: string
+  @Column({ type: "varchar", length: 50, nullable: false })
+  language: string
 
-  @Column({ type: "varchar", nullable: true })
-  profile_picture?: string
+  @Column({ type: "varchar", nullable: false })
+  profile_picture: string
 
   @Column({ type: "varchar", length: 20, nullable: true })
   referral_code?: string
