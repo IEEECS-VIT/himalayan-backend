@@ -93,5 +93,6 @@ module.exports = defineConfig({
     //     indexName: process.env.ALGOLIA_INDEX_NAME || "products",
     //   },
     // },
+   
   ],
 });
