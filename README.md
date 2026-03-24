@@ -54,7 +54,7 @@ The community and core team are available in [GitHub Discussions](https://github
 
 Join our [Discord server](https://discord.com/invite/medusajs) to meet other community members.
 
-## Other channels
+## Other channels.
 
 - [GitHub Issues](https://github.com/medusajs/medusa/issues)
 - [Twitter](https://twitter.com/medusajs)
